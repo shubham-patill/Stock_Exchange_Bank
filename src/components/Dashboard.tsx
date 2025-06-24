@@ -16,7 +16,7 @@ interface Company {
   price: number;
   availableShares: number;
 }
-
+// https://github.com/shubham-patill/StockBank.git
 const initialCompanies: Company[] = [
   { name: 'SunPharma', price: 25.0, availableShares: 200000 },
   { name: 'ICICI Bank', price: 35.0, availableShares: 200000 },
