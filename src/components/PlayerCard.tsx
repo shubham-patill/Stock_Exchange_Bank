@@ -1,11 +1,9 @@
-
 import { useState } from 'react';
 import { Player, Transaction } from '@/pages/Index';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Plus, Minus, TrendingUp, History, RotateCcw, Edit3, Check, X } from 'lucide-react';
@@ -21,6 +19,7 @@ export const PlayerCard = ({ player, onUpdatePlayer }: PlayerCardProps) => {
   const [showTransactions, setShowTransactions] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(player.name);
+  const [lastState, setLastState] = useState<Player | null>(null);
 
   const addTransaction = (type: Transaction['type'], amount: number, description: string) => {
     const newTransaction: Transaction = {
@@ -30,6 +29,8 @@ export const PlayerCard = ({ player, onUpdatePlayer }: PlayerCardProps) => {
       timestamp: new Date(),
       description
     };
+
+    setLastState(player); // Save current state before update
 
     const updatedPlayer: Player = {
       ...player,
@@ -82,21 +83,14 @@ export const PlayerCard = ({ player, onUpdatePlayer }: PlayerCardProps) => {
     addTransaction('lsm', 100000, 'Loan Stock Matured');
   };
 
-  const handleReset = () => {
-    const initialBalance = player.transactions.find(t => t.type === 'add')?.amount || 500000;
-    const resetPlayer: Player = {
-      ...player,
-      balance: initialBalance,
-      transactions: [{
-        id: `reset-${Date.now()}`,
-        type: 'reset',
-        amount: initialBalance,
-        timestamp: new Date(),
-        description: 'Balance reset to initial amount'
-      }, ...player.transactions]
-    };
-    onUpdatePlayer(resetPlayer);
-    toast.success('Balance reset to initial amount');
+  const handleUndo = () => {
+    if (lastState) {
+      onUpdatePlayer(lastState);
+      toast.success('Last transaction undone');
+      setLastState(null);
+    } else {
+      toast.error('Nothing to undo');
+    }
   };
 
   const getTransactionColor = (type: Transaction['type']) => {
@@ -145,7 +139,7 @@ export const PlayerCard = ({ player, onUpdatePlayer }: PlayerCardProps) => {
               </Button>
             </div>
           )}
-          
+
           <Dialog open={showTransactions} onOpenChange={setShowTransactions}>
             <DialogTrigger asChild>
               <Button variant="ghost" size="sm" className="p-2">
@@ -233,31 +227,15 @@ export const PlayerCard = ({ player, onUpdatePlayer }: PlayerCardProps) => {
             <TrendingUp className="w-4 h-4 mr-1" />
             LSM (+₹1L)
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                className="hover:bg-gray-50"
-              >
-                <RotateCcw className="w-4 h-4 mr-1" />
-                Reset
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure you want to reset?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will reset {player.name}'s balance to the starting amount. This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleReset}>
-                  Yes, Reset Balance
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <Button
+            onClick={handleUndo}
+            variant="outline"
+            className="hover:bg-gray-50"
+            disabled={!lastState}
+          >
+            <RotateCcw className="w-4 h-4 mr-1" />
+            Undo
+          </Button>
         </div>
       </CardContent>
     </Card>
