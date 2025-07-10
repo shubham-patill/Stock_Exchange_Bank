@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Player } from '@/pages/Index';
 import { PlayerCard } from '@/components/PlayerCard';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Banknote } from 'lucide-react';
+import { RefreshCw, Banknote, Eye } from 'lucide-react';
 import { ManagePricesModal } from '@/components/ManagePricesModal';
+import { ManageShareModal } from '@/components/ManageShareModal';
 
 interface DashboardProps {
   players: Player[];
@@ -29,6 +30,7 @@ const initialCompanies: Company[] = [
 export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) => {
   const totalBalance = players.reduce((sum, player) => sum + player.balance, 0);
   const [companies, setCompanies] = useState<Company[]>(initialCompanies);
+  const [showShares, setShowShares] = useState(false);
 
   // State for ManagePricesModal
   const [priceInputs, setPriceInputs] = useState<{ [key: string]: string }>({});
@@ -70,10 +72,10 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-2">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
               <Banknote className="w-6 h-6 text-white" />
@@ -93,6 +95,20 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
               updateCompanyPriceByDelta={updateCompanyPriceByDelta}
               suspendLastOperation={suspendLastOperation}
             />
+            <ManageShareModal
+              players={players}
+              setPlayers={setPlayers}
+              companies={companies}
+              setCompanies={setCompanies}
+            />
+            <Button
+              onClick={() => setShowShares(!showShares)}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <Eye className="w-4 h-4" />
+              {showShares ? 'Hide Shares' : 'Show Shares'}
+            </Button>
             <Button
               onClick={onResetGame}
               variant="outline"
@@ -105,11 +121,11 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
         </div>
 
         {/* Company Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
           {companies.map(company => {
             const logoSrc = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
             return (
-              <div key={company.name} className="flex items-center gap-3 p-3 bg-white border rounded shadow-sm">
+              <div key={company.name} className="flex items-center gap-3 p-2 bg-white border rounded shadow-sm">
                 <img
                   src={logoSrc}
                   alt={company.name}
@@ -123,6 +139,11 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
                 <div className="flex flex-col w-full">
                   <div className="font-medium text-sm">{company.name}</div>
                   <div className="text-blue-600 font-bold text-md">₹{company.price}</div>
+                  {showShares && (
+                    <div className="text-xs text-gray-600 mt-1">
+                      Available: {company.availableShares} shares
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -130,12 +151,14 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
         </div>
 
         {/* Player Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {players.map(player => (
             <PlayerCard
               key={player.id}
               player={player}
               onUpdatePlayer={updatePlayer}
+              showShares={showShares}
+              companies={companies}
             />
           ))}
         </div>
