@@ -4,7 +4,8 @@ import { PlayerCard } from '@/components/PlayerCard';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Banknote, Eye } from 'lucide-react';
 import { ManagePricesModal } from '@/components/ManagePricesModal';
-import { ManageShareModal } from '@/components/ManageShareModal';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface DashboardProps {
   players: Player[];
@@ -17,20 +18,20 @@ interface Company {
   price: number;
   availableShares: number;
 }
-// https://github.com/shubham-patill/StockBank.git
+
 const initialCompanies: Company[] = [
   { name: 'SunPharma', price: 25.0, availableShares: 200000 },
   { name: 'ICICI Bank', price: 35.0, availableShares: 200000 },
   { name: 'Tisco', price: 45.0, availableShares: 200000 },
-  { name: 'Adani', price: 55.0, availableShares: 200000 },      // changed from 'Adani Gas'
+  { name: 'Adani', price: 55.0, availableShares: 200000 },
   { name: 'Reliance', price: 70.0, availableShares: 200000 },
-  { name: 'TCS', price: 80.0, availableShares: 200000 },        // changed from 'Infosys'
+  { name: 'TCS', price: 80.0, availableShares: 200000 },
 ];
 
 export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) => {
   const totalBalance = players.reduce((sum, player) => sum + player.balance, 0);
   const [companies, setCompanies] = useState<Company[]>(initialCompanies);
-  const [showShares, setShowShares] = useState(false);
+  const [showSharesModal, setShowSharesModal] = useState(false);
 
   // State for ManagePricesModal
   const [priceInputs, setPriceInputs] = useState<{ [key: string]: string }>({});
@@ -95,20 +96,75 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
               updateCompanyPriceByDelta={updateCompanyPriceByDelta}
               suspendLastOperation={suspendLastOperation}
             />
-            <ManageShareModal
-              players={players}
-              setPlayers={setPlayers}
-              companies={companies}
-              setCompanies={setCompanies}
-            />
-            <Button
-              onClick={() => setShowShares(!showShares)}
-              variant="outline"
-              className="flex items-center gap-2"
-            >
-              <Eye className="w-4 h-4" />
-              {showShares ? 'Hide Shares' : 'Show Shares'}
-            </Button>
+            <Dialog open={showSharesModal} onOpenChange={setShowSharesModal}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="flex items-center gap-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  Show All Shares
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>All Players' Share Holdings</DialogTitle>
+                  <DialogDescription>
+                    View all players and their share holdings
+                  </DialogDescription>
+                </DialogHeader>
+                <Tabs defaultValue={players[0]?.id.toString()} className="w-full">
+                  <TabsList className="grid w-full grid-cols-4">
+                    {players.map((player) => (
+                      <TabsTrigger key={player.id} value={player.id.toString()} className="text-xs">
+                        {player.name}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                  {players.map((player) => (
+                    <TabsContent key={player.id} value={player.id.toString()} className="space-y-4">
+                      <div className="p-4 bg-blue-50 rounded-lg">
+                        <h3 className="font-semibold text-lg mb-2">{player.name}</h3>
+                        <p className="text-sm text-gray-600">Balance: ₹{player.balance.toLocaleString('en-IN')}</p>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {companies.map(company => {
+                          const holdings = player.holdings?.[company.name] || 0;
+                          const totalValue = holdings * company.price;
+                          const imagePath = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
+                          
+                          return (
+                            <div key={company.name} className="flex items-center gap-3 p-3 bg-gray-50 border rounded">
+                              <img
+                                src={imagePath}
+                                alt={company.name}
+                                width={50}
+                                height={50}
+                                className="rounded shadow"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = '/logos/default.png';
+                                }}
+                              />
+                              <div className="flex-1">
+                                <div className="font-medium">{company.name}</div>
+                                <div className="text-sm text-gray-600">
+                                  {holdings} shares × ₹{company.price} = ₹{totalValue.toLocaleString('en-IN')}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {Object.keys(player.holdings || {}).length === 0 && (
+                        <div className="text-center text-gray-500 py-8">
+                          No shares owned
+                        </div>
+                      )}
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              </DialogContent>
+            </Dialog>
             <Button
               onClick={onResetGame}
               variant="outline"
@@ -139,11 +195,9 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
                 <div className="flex flex-col w-full">
                   <div className="font-medium text-sm">{company.name}</div>
                   <div className="text-blue-600 font-bold text-md">₹{company.price}</div>
-                  {showShares && (
-                    <div className="text-xs text-gray-600 mt-1">
-                      Available: {company.availableShares} shares
-                    </div>
-                  )}
+                  <div className="text-xs text-gray-600 mt-1">
+                    Available: {company.availableShares} shares
+                  </div>
                 </div>
               </div>
             );
@@ -157,8 +211,8 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
               key={player.id}
               player={player}
               onUpdatePlayer={updatePlayer}
-              showShares={showShares}
               companies={companies}
+              setCompanies={setCompanies}
             />
           ))}
         </div>
