@@ -6,13 +6,14 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Minus, TrendingUp, History, RotateCcw, Edit3, Check, ShoppingCart, DollarSign } from 'lucide-react';
+import { Plus, Minus, TrendingUp, History, RotateCcw, Edit3, Check, ShoppingCart, DollarSign, Percent } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Company {
   name: string;
   price: number;
   availableShares: number;
+  priceHistory: { price: number; timestamp: Date }[];
 }
 
 interface PlayerCardProps {
@@ -27,6 +28,7 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(player.name);
   const [lastState, setLastState] = useState<Player | null>(null);
+  const [isPercentageDialogOpen, setIsPercentageDialogOpen] = useState(false);
   const [showBuyModal, setShowBuyModal] = useState(false);
   const [showSellModal, setShowSellModal] = useState(false);
   const [buyStep, setBuyStep] = useState<1 | 2>(1);
@@ -94,6 +96,31 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
     } else {
       toast.error('Nothing to undo');
     }
+  };
+
+  const handlePercentageOperation = (action: 'add' | 'subtract', percentage: number) => {
+    const currentBalance = player.balance;
+    const rawAmount = currentBalance * (percentage / 100);
+    
+    // If raw percentage amount is below 5000, don't perform transaction
+    if (rawAmount < 5000) {
+      toast.error('Cash below 5000');
+      return;
+    }
+    
+    // Round to nearest multiple of 5000
+    let amount = Math.round(rawAmount / 5000) * 5000;
+    
+    if (action === 'subtract' && amount > currentBalance) {
+      toast.error('Insufficient balance');
+      return;
+    }
+
+    const description = action === 'add' 
+      ? `Cash Added: +${percentage}% (₹${amount.toLocaleString('en-IN')})`
+      : `Cash Withdrawn: -${percentage}% (₹${amount.toLocaleString('en-IN')})`;
+
+    addTransaction(action === 'add' ? 'add' : 'subtract', amount, description);
   };
 
   const getTransactionColor = (type: Transaction['type']) => {
@@ -166,6 +193,11 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
     setBuyInputs((prev) => ({ ...prev, [companyName]: '' }));
 
     toast.success(`${player.name} bought ${quantity} shares of ${companyName} for ₹${totalCost}`);
+    
+    // Close modal and reset to step 1
+    setShowBuyModal(false);
+    setBuyStep(1);
+    setSelectedBuyCompany(null);
   };
 
   // Sell shares function
@@ -224,6 +256,11 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
     setSellInputs((prev) => ({ ...prev, [companyName]: '' }));
 
     toast.success(`${player.name} sold ${quantity} shares of ${companyName} for ₹${totalValue}`);
+    
+    // Close modal and reset to step 1
+    setShowSellModal(false);
+    setSellStep(1);
+    setSelectedSellCompany(null);
   };
 
   // Right Issue buy logic
@@ -408,7 +445,7 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         {/* Buy and Sell Buttons */}
         <div className="grid grid-cols-2 gap-2">
           {/* BUY MODAL */}
@@ -520,7 +557,7 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
                             />
                             <Button
                               variant="secondary"
-                              onClick={() => handleRightIssueBuy(company.name, parseInt(rightIssueInputs[company.name] || '0'), false)}
+                              onClick={() => handleRightIssueBuy(company.name, parseInt(rightIssueInputs[company.name] || '0'), true)}
                               disabled={!rightIssueInputs[company.name] || parseInt(rightIssueInputs[company.name]) <= 0 || parseInt(rightIssueInputs[company.name]) > maxRightIssueQuantity}
                             >
                               Right Issue
@@ -621,6 +658,16 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
                             Sell
                           </Button>
                         </div>
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            className="bg-red-800 hover:bg-red-900 text-white"
+                            variant="default"
+                            onClick={() => sellShares(company.name, quantity)}
+                            disabled={quantity < 1000}
+                          >
+                            Sell All ({quantity} shares)
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -630,6 +677,7 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
           </Dialog>
         </div>
 
+        {/* Main Action Buttons */}
         <div className="grid grid-cols-3 gap-2">
           <Dialog open={showRightIssueModal} onOpenChange={setShowRightIssueModal}>
             <DialogTrigger asChild>
@@ -808,16 +856,70 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
           >
             Loan Stock
           </Button>
-          <Button
-            onClick={handleUndo}
-            variant="outline"
-            className="hover:bg-gray-50"
-            disabled={!lastState}
-          >
-            <RotateCcw className="w-4 h-4 mr-1" />
-            Undo
-          </Button>
+          <Dialog open={isPercentageDialogOpen} onOpenChange={setIsPercentageDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                className="hover:bg-gray-50"
+              >
+                <Percent className="w-4 h-4 mr-1" />
+                %
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Percentage Operations</DialogTitle>
+                <DialogDescription>
+                  Add or subtract a percentage of current balance (₹{player.balance.toLocaleString('en-IN')})
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <Button
+                  onClick={() => {
+                    handlePercentageOperation('add', 10);
+                    setIsPercentageDialogOpen(false);
+                  }}
+                  className="bg-green-500 hover:bg-green-600 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  +10%
+                </Button>
+                <Button
+                  onClick={() => {
+                    handlePercentageOperation('add', 20);
+                    setIsPercentageDialogOpen(false);
+                  }}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  +20%
+                </Button>
+                <Button
+                  onClick={() => {
+                    handlePercentageOperation('subtract', 10);
+                    setIsPercentageDialogOpen(false);
+                  }}
+                  className="bg-red-500 hover:bg-red-600 text-white"
+                >
+                  <Minus className="w-4 h-4 mr-1" />
+                  -10%
+                </Button>
+                <Button
+                  onClick={() => {
+                    handlePercentageOperation('subtract', 20);
+                    setIsPercentageDialogOpen(false);
+                  }}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  <Minus className="w-4 h-4 mr-1" />
+                  -20%
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
+
+
       </CardContent>
     </Card>
   );
