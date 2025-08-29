@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { Player } from '@/pages/Index';
 import { PlayerCard } from '@/components/PlayerCard';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Banknote, Eye, AlertTriangle, TrendingUp } from 'lucide-react';
+import { RefreshCw, Banknote, Eye, AlertTriangle, TrendingUp, Trophy } from 'lucide-react';
 import { ManagePricesModal } from '@/components/ManagePricesModal';
+import { PriceChangesModal } from '@/components/PriceChangesModal';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -61,30 +63,62 @@ const initialCompanies: Company[] = [
 
 export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) => {
   const totalBalance = players.reduce((sum, player) => sum + player.balance, 0);
-  const [companies, setCompanies] = useState<Company[]>(initialCompanies);
-  const [showSharesModal, setShowSharesModal] = useState(false);
-  const [showResetConfirmation, setShowResetConfirmation] = useState(false);
-  const [showPriceHistoryModal, setShowPriceHistoryModal] = useState(false);
-  const [selectedCompanyForHistory, setSelectedCompanyForHistory] = useState<Company | null>(null);
+  const [companies, setCompanies] = React.useState<Company[]>(initialCompanies);
+  const [showSharesModal, setShowSharesModal] = React.useState(false);
+  const [showResetConfirmation, setShowResetConfirmation] = React.useState(false);
+  const [showPriceHistoryModal, setShowPriceHistoryModal] = React.useState(false);
+  const [selectedCompanyForHistory, setSelectedCompanyForHistory] = React.useState<Company | null>(null);
+  const [showEndGame, setShowEndGame] = React.useState(false);
+  const [allPlayersApproved, setAllPlayersApproved] = React.useState(false);
 
   // State for ManagePricesModal
-  const [priceInputs, setPriceInputs] = useState<{ [key: string]: string }>({});
-  const [lastDeltas, setLastDeltas] = useState<{ [key: string]: number }>({});
+  const [priceInputs, setPriceInputs] = React.useState<{ [key: string]: string }>({});
+  const [lastDeltas, setLastDeltas] = React.useState<{ [key: string]: number }>({});
+  const [priceStatus, setPriceStatus] = React.useState<{ [key: string]: 'up' | 'down' | 'unchanged' | undefined }>({});
 
-  // Add browser refresh confirmation
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = 'Are you sure you want to refresh the page? This will reset the entire game.';
-      return 'Are you sure you want to refresh the page? This will reset the entire game.';
-    };
+  // Holdings viewer state (Dashboard modal)
+  const [showHoldingsModal, setShowHoldingsModal] = React.useState(false);
+  const [selectedPlayerForHoldings, setSelectedPlayerForHoldings] = React.useState<number | null>(players[0]?.id ?? null);
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
+  const updatePlayer = (updatedPlayer: Player) => {
+    setPlayers(players.map(player => player.id === updatedPlayer.id ? updatedPlayer : player));
+  };
 
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, []);
+  const handleResetGame = () => {
+    setShowResetConfirmation(true);
+  };
+
+  const confirmResetGame = () => {
+    onResetGame();
+    setShowResetConfirmation(false);
+  };
+
+  const finalizeManagePrices = () => {
+    // Any company without an explicit up/down in this session becomes 'unchanged' (blue)
+    setPriceStatus((prev) => {
+      const next = { ...prev } as { [key: string]: 'up' | 'down' | 'unchanged' | undefined };
+      companies.forEach((c) => {
+        if (next[c.name] === undefined) {
+          next[c.name] = 'unchanged';
+        }
+      });
+      return next;
+    });
+  };
+
+  const computeHoldingsValue = (p: Player) => {
+    const holdings = p.holdings || {};
+    return companies.reduce((sum, c) => sum + (holdings[c.name] || 0) * c.price, 0);
+  };
+  const leaderboard = React.useMemo(() => {
+    return players
+      .map((p) => {
+        const holdingsValue = computeHoldingsValue(p);
+        const total = p.balance + holdingsValue;
+        return { player: p, holdingsValue, total };
+      })
+      .sort((a, b) => b.total - a.total);
+  }, [players, companies]);
 
   const handleInputChange = (companyName: string, value: string) => {
     setPriceInputs((prev) => ({ ...prev, [companyName]: value }));
@@ -107,6 +141,7 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
       )
     );
     setLastDeltas((prev) => ({ ...prev, [companyName]: delta }));
+    setPriceStatus((prev) => ({ ...prev, [companyName]: delta > 0 ? 'up' : 'down' }));
     setPriceInputs((prev) => ({ ...prev, [companyName]: '' }));
   };
 
@@ -128,21 +163,24 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
         )
       );
       setLastDeltas((prev) => ({ ...prev, [companyName]: 0 }));
+      setPriceStatus((prev) => ({ ...prev, [companyName]: 'unchanged' }));
     }
   };
 
-  const updatePlayer = (updatedPlayer: Player) => {
-    setPlayers(players.map(player => player.id === updatedPlayer.id ? updatedPlayer : player));
-  };
+  // Add browser refresh confirmation
+  React.useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'Are you sure you want to refresh the page? This will reset the entire game.';
+      return 'Are you sure you want to refresh the page? This will reset the entire game.';
+    };
 
-  const handleResetGame = () => {
-    setShowResetConfirmation(true);
-  };
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
-  const confirmResetGame = () => {
-    onResetGame();
-    setShowResetConfirmation(false);
-  };
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-2">
@@ -167,143 +205,126 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
               handleInputChange={handleInputChange}
               updateCompanyPriceByDelta={updateCompanyPriceByDelta}
               suspendLastOperation={suspendLastOperation}
+              onDone={finalizeManagePrices}
             />
-            <Dialog open={showSharesModal} onOpenChange={setShowSharesModal}>
+            <PriceChangesModal companies={companies} />
+            {/* Show Shares (Dashboard) */}
+            <Dialog open={showHoldingsModal} onOpenChange={(open) => { setShowHoldingsModal(open); }}>
               <DialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="flex items-center gap-2"
-                >
-                  <Eye className="w-4 h-4" />
-                  Show All Shares
+                <Button variant="secondary" onClick={() => { setShowHoldingsModal(true); setSelectedPlayerForHoldings(players[0]?.id ?? null); }}>
+                  Show Shares
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+              <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>All Players' Share Holdings</DialogTitle>
-                  <DialogDescription>
-                    View all players and their share holdings
-                  </DialogDescription>
+                  <DialogTitle>Player Holdings</DialogTitle>
+                  <DialogDescription>View current shares held by each player.</DialogDescription>
                 </DialogHeader>
-                <Tabs defaultValue={players[0]?.id.toString()} className="w-full">
+                {/* Player Tabs */}
+                <Tabs value={selectedPlayerForHoldings?.toString() || ''} onValueChange={(v) => { setSelectedPlayerForHoldings(Number(v)); }} className="w-full mb-3">
                   <TabsList className="grid w-full grid-cols-4">
-                    {players.map((player) => (
-                      <TabsTrigger key={player.id} value={player.id.toString()} className="text-xs">
-                        {player.name}
-                      </TabsTrigger>
+                    {players.map((p) => (
+                      <TabsTrigger key={p.id} value={p.id.toString()} className="text-xs">{p.name}</TabsTrigger>
                     ))}
                   </TabsList>
-                  {players.map((player) => (
-                    <TabsContent key={player.id} value={player.id.toString()} className="space-y-4">
-                      <div className="p-4 bg-blue-50 rounded-lg">
-                        <h3 className="font-semibold text-lg mb-2">{player.name}</h3>
-                        <p className="text-sm text-gray-600">Balance: ₹{player.balance.toLocaleString('en-IN')}</p>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {companies.map(company => {
-                          const holdings = player.holdings?.[company.name] || 0;
-                          const totalValue = holdings * company.price;
-                          const imagePath = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
-                          
-                          return (
-                            <div key={company.name} className="flex items-center gap-3 p-3 bg-gray-50 border rounded">
-                              <img
-                                src={imagePath}
-                                alt={company.name}
-                                width={50}
-                                height={50}
-                                className="rounded shadow"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = '/logos/default.png';
-                                }}
-                              />
-                              <div className="flex-1">
-                                <div className="font-medium">{company.name}</div>
-                                <div className="text-sm text-gray-600">
-                                  {holdings} shares × ₹{company.price} = ₹{totalValue.toLocaleString('en-IN')}
-                                </div>
+                </Tabs>
+
+                {selectedPlayerForHoldings && (() => {
+                  const player = players.find(p => p.id === selectedPlayerForHoldings)!;
+                  const holdings = player.holdings || {};
+                  const items = companies.filter(c => (holdings[c.name] || 0) > 0);
+                  if (items.length === 0) {
+                    return <div className="text-sm text-gray-600">No shares owned.</div>;
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {items.map((c) => {
+                        const qty = holdings[c.name] || 0;
+                        const value = qty * c.price;
+                        const logoSrc = `/logos/${c.name.replace(/\s+/g, '').toLowerCase()}.png`;
+                        return (
+                          <div key={c.name} className="flex items-center justify-between p-3 bg-white border rounded">
+                            <div className="flex items-center gap-3">
+                              <img src={logoSrc} alt={c.name} width={48} height={32} className="rounded" onError={(e) => { (e.target as HTMLImageElement).src = '/logos/default.png'; }} />
+                              <div>
+                                <div className="font-medium text-sm">{c.name}</div>
+                                <div className="text-xs text-gray-600">Qty: {qty.toLocaleString('en-IN')}</div>
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                      {Object.keys(player.holdings || {}).length === 0 && (
-                        <div className="text-center text-gray-500 py-8">
-                          No shares owned
-                        </div>
-                      )}
-                    </TabsContent>
-                  ))}
-                </Tabs>
+                            <div className="text-right">
+                              <div className="text-sm">₹{c.price}</div>
+                              <div className="text-xs text-gray-600">Value: ₹{value.toLocaleString('en-IN')}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </DialogContent>
             </Dialog>
             <Button
-              onClick={handleResetGame}
-              variant="outline"
-              className="flex items-center gap-2 hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors"
+              variant="destructive"
+              className="flex items-center gap-2"
+              onClick={() => setShowEndGame(true)}
+              title="Show final results and end the game"
             >
-              <RefreshCw className="w-4 h-4" />
-              New Game
+              <Trophy className="w-4 h-4" />
+              End Game
             </Button>
-            {/* <Button
-              onClick={() => {
-                if (window.confirm('Are you sure you want to refresh the page? This will reset the entire game.')) {
-                  window.location.reload();
-                }
-              }}
-              variant="outline"
-              className="flex items-center gap-2 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-colors"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh Page
-            </Button> */}
           </div>
         </div>
 
-                 {/* Company Cards */}
-         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-           {companies.map(company => {
-             const logoSrc = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
-             return (
-                               <div key={company.name} className="flex items-center justify-between p-4 pr-6 bg-white border rounded shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={logoSrc}
-                      alt={company.name}
-                      width={80}
-                      height={40}
-                      className="rounded"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = '/logos/default.png';
-                      }}
-                    />
-                    <div className="flex flex-col">
-                      <div className="font-medium text-sm">{company.name}</div>
-                      <div className="text-xs text-gray-600">
-                        Available: {company.availableShares} shares
-                      </div>
+        {/* Company Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+          {companies.map(company => {
+            const logoSrc = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
+            const colorClass =
+              priceStatus[company.name] === 'up'
+                ? 'text-green-600'
+                : priceStatus[company.name] === 'down'
+                ? 'text-red-600'
+                : 'text-blue-600';
+            return (
+              <div key={company.name} className="flex items-center justify-between p-4 pr-6 bg-white border rounded shadow-sm">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={logoSrc}
+                    alt={company.name}
+                    width={80}
+                    height={40}
+                    className="rounded"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = '/logos/default.png';
+                    }}
+                  />
+                  <div className="flex flex-col">
+                    <div className="font-medium text-sm">{company.name}</div>
+                    <div className="text-xs text-gray-600">
+                      Available: {company.availableShares} shares
                     </div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-blue-600">₹{company.price}</div>
-                    <div className="text-xs text-gray-500">per share</div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedCompanyForHistory(company);
-                        setShowPriceHistoryModal(true);
-                      }}
-                      className="mt-2 text-xs text-blue-600 hover:text-blue-800"
-                    >
-                      <TrendingUp className="w-3 h-3 mr-1" />
-                      History
-                    </Button>
-                  </div>
                 </div>
-             );
-           })}
-         </div>
+                <div className="text-center">
+                  <div className={`text-3xl font-bold ${colorClass}`}>₹{company.price}</div>
+                  <div className="text-xs text-gray-500">per share</div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedCompanyForHistory(company);
+                      setShowPriceHistoryModal(true);
+                    }}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    <TrendingUp className="w-3 h-3 mr-1" />
+                    History
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
         {/* Player Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -420,6 +441,64 @@ export const Dashboard = ({ players, setPlayers, onResetGame }: DashboardProps) 
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* End Game Results Modal */}
+      <Dialog open={showEndGame} onOpenChange={(open) => { setShowEndGame(open); if (!open) setAllPlayersApproved(false); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Final Results</DialogTitle>
+            <DialogDescription>Ranking by total wealth = Cash + Current value of holdings</DialogDescription>
+          </DialogHeader>
+          <div className="mb-4 p-3 border rounded bg-gray-50 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="approveEndGame"
+              checked={allPlayersApproved}
+              onChange={(e) => setAllPlayersApproved(e.target.checked)}
+            />
+            <label htmlFor="approveEndGame" className="font-medium">All players approve to end the game</label>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left border-b bg-gray-50">
+                  <th className="px-3 py-2">Rank</th>
+                  <th className="px-3 py-2">Player</th>
+                  <th className="px-3 py-2">Cash</th>
+                  <th className="px-3 py-2">Holdings Value</th>
+                  <th className="px-3 py-2">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaderboard.map((row, idx) => (
+                  <tr key={row.player.id} className="border-b">
+                    <td className="px-3 py-2 font-medium">{idx + 1}</td>
+                    <td className="px-3 py-2">{row.player.name}</td>
+                    <td className="px-3 py-2">₹{row.player.balance.toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2">₹{row.holdingsValue.toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2 font-semibold">₹{row.total.toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setShowEndGame(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              className="flex items-center gap-2"
+              disabled={!allPlayersApproved}
+              onClick={() => {
+                setShowEndGame(false);
+                onResetGame();
+              }}
+            >
+              <Trophy className="w-4 h-4" />
+              End Game & Exit
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

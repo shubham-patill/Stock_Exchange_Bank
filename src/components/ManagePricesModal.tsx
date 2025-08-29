@@ -6,11 +6,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { useState } from 'react';
 
 interface Company {
   name: string;
   price: number;
   availableShares: number;
+  priceHistory: { price: number; timestamp: Date }[];
 }
 
 interface ManagePricesModalProps {
@@ -20,6 +22,7 @@ interface ManagePricesModalProps {
   handleInputChange: (companyName: string, value: string) => void;
   updateCompanyPriceByDelta: (companyName: string, delta: number) => void;
   suspendLastOperation: (companyName: string) => void;
+  onDone?: () => void;
 }
 
 export const ManagePricesModal = ({
@@ -29,11 +32,13 @@ export const ManagePricesModal = ({
   handleInputChange,
   updateCompanyPriceByDelta,
   suspendLastOperation,
+  onDone,
 }: ManagePricesModalProps) => {
+  const [open, setOpen] = useState(false);
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="secondary">Manage Prices</Button>
+        <Button variant="secondary" onClick={() => setOpen(true)}>Manage Prices</Button>
       </DialogTrigger>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
@@ -42,6 +47,12 @@ export const ManagePricesModal = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           {companies.map((company) => {
             const imagePath = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
+            const priceHistory = company.priceHistory || [];
+            const previousPrice =
+              priceHistory.length > 1
+                ? priceHistory[priceHistory.length - 2].price
+                : null;
+            const variation = previousPrice !== null ? company.price - previousPrice : null;
 
             return (
               <div
@@ -62,7 +73,28 @@ export const ManagePricesModal = ({
 
                 <div className="flex flex-col gap-1 w-full">
                   <div className="font-medium">{company.name}</div>
-                  <div className="text-blue-600 font-semibold">₹{company.price}</div>
+                  <div className="text-blue-600 font-semibold">
+                    ₹{company.price}
+                    {variation !== null && (
+                      <span
+                        className={`ml-2 text-sm ${
+                          variation > 0
+                            ? 'text-green-600'
+                            : variation < 0
+                            ? 'text-red-600'
+                            : 'text-gray-500'
+                        }`}
+                      >
+                        ({variation > 0 ? '+' : ''}
+                        {variation.toFixed(2)})
+                      </span>
+                    )}
+                  </div>
+                  {previousPrice !== null && (
+                    <div className="text-xs text-gray-500">
+                      Prev: ₹{previousPrice.toFixed(2)}
+                    </div>
+                  )}
 
                   <div className="flex gap-2 mt-2">
                     <input
@@ -111,6 +143,18 @@ export const ManagePricesModal = ({
               </div>
             );
           })}
+        </div>
+        <div className="mt-6 flex justify-end">
+          <Button
+            variant="default"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+            onClick={() => {
+              onDone && onDone();
+              setOpen(false);
+            }}
+          >
+            Done
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

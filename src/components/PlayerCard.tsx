@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Minus, TrendingUp, History, RotateCcw, Edit3, Check, ShoppingCart, DollarSign, Percent } from 'lucide-react';
+import { Plus, Minus, TrendingUp, History, RotateCcw, Edit3, Check, ShoppingCart, DollarSign, Percent, Eye, EyeOff, KeyRound, Copy, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Company {
@@ -45,6 +45,9 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
   const [rightIssueInput, setRightIssueInput] = useState<{ [key: string]: string }>({});
   const [rightIssueCashInput, setRightIssueCashInput] = useState<{ [key: string]: string }>({});
   const [rightIssueCalcResult, setRightIssueCalcResult] = useState<{ [key: string]: { buyNow: number, nextRightIssue: number } }>({});
+  const [showCodeDialog, setShowCodeDialog] = useState(false);
+  const [revealCode, setRevealCode] = useState(false);
+  const [showDebentureModal, setShowDebentureModal] = useState(false);
 
   const addTransaction = (type: Transaction['type'], amount: number, description: string) => {
     const newTransaction: Transaction = {
@@ -360,6 +363,55 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
     return { buyNow, nextRightIssue };
   };
 
+  const handleDebenture = (companyName: string) => {
+    const company = companies.find(c => c.name === companyName);
+    const playerHoldingShares = player.holdings?.[companyName] || 0;
+
+    if (!company || playerHoldingShares === 0 || company.price > 0) {
+      toast.error("Debenture is not applicable for this company.");
+      return;
+    }
+
+    const initialPrice = company.priceHistory[0]?.price;
+    if (initialPrice === undefined) {
+      toast.error("Could not find the initial price for this company.");
+      return;
+    }
+
+    const saleAmount = playerHoldingShares * initialPrice;
+
+    const updatedHoldings = { ...player.holdings };
+    delete updatedHoldings[companyName];
+
+    const updatedPlayer: Player = {
+      ...player,
+      balance: player.balance + saleAmount,
+      holdings: updatedHoldings,
+      transactions: [
+        {
+          id: `debenture-${Date.now()}`,
+          type: 'add', // Using 'add' type for color coding, but description is specific
+          amount: saleAmount,
+          description: `Debenture: Sold ${playerHoldingShares} ${companyName} shares at initial price of ₹${initialPrice}`,
+          timestamp: new Date(),
+        },
+        ...player.transactions,
+      ],
+    };
+
+    onUpdatePlayer(updatedPlayer);
+
+    // Also update the company's available shares
+    setCompanies(companies.map(c =>
+      c.name === companyName
+        ? { ...c, availableShares: c.availableShares + playerHoldingShares }
+        : c
+    ));
+
+    toast.success(`Debenture executed for ${companyName}.`);
+    setShowDebentureModal(false);
+  };
+
   return (
     <Card className="shadow-lg hover:shadow-xl transition-all duration-300 border-0 bg-white/90 backdrop-blur-sm">
       <CardHeader className="pb-2">
@@ -374,13 +426,11 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
                   if (e.key === 'Enter') handleNameSave();
                   if (e.key === 'Escape') handleNameCancel();
                 }}
+                onBlur={handleNameSave} // Save on blur
                 autoFocus
               />
               <Button variant="ghost" size="sm" onClick={handleNameSave} className="p-1 h-8 w-8">
                 <Check className="w-4 h-4 text-green-600" />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={handleNameCancel} className="px-2 py-1 text-xs">
-                Done
               </Button>
             </div>
           ) : (
@@ -439,6 +489,42 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
               </ScrollArea>
             </DialogContent>
           </Dialog>
+          {/* Secret Code viewer */}
+          <Dialog open={showCodeDialog} onOpenChange={(open) => { setShowCodeDialog(open); if (!open) setRevealCode(false); }}>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="p-2" title="Show secret code">
+                <KeyRound className="w-4 h-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>{player.name} - Secret Code</DialogTitle>
+                <DialogDescription>Keep your code private. Only reveal when you need to confirm.</DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center gap-3 py-2">
+                <div className="text-2xl font-mono tracking-widest select-all">
+                  {revealCode ? player.secretCode : '•'.repeat(4)}
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setRevealCode((v) => !v)} aria-label={revealCode ? 'Hide code' : 'Reveal code'}>
+                  {revealCode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(player.secretCode);
+                      toast.success('Code copied');
+                    } catch {
+                      toast.error('Failed to copy');
+                    }
+                  }}
+                >
+                  <Copy className="w-4 h-4 mr-1" /> Copy
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </CardTitle>
         <div className="text-3xl font-bold text-green-600">
           ₹{player.balance.toLocaleString('en-IN')}
@@ -466,13 +552,18 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
               {buyStep === 1 ? (
                 // Step 1: Company selection
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-            {companies.map(company => {
+                  {companies.map(company => {
                     const logoSrc = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
-                return (
+                    const isPriceZero = company.price === 0;
+                    return (
                       <div
                         key={company.name}
-                        className="flex items-center gap-3 p-2 bg-white border rounded shadow-sm cursor-pointer hover:bg-blue-50"
-                        onClick={() => { setSelectedBuyCompany(company.name); setBuyStep(2); }}
+                        className={`flex items-center gap-3 p-2 bg-white border rounded shadow-sm ${
+                          isPriceZero
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'cursor-pointer hover:bg-blue-50'
+                        }`}
+                        onClick={() => { if (!isPriceZero) { setSelectedBuyCompany(company.name); setBuyStep(2); } }}
                       >
                         <img
                           src={logoSrc}
@@ -489,8 +580,8 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
                             Available: {company.availableShares} shares
                           </div>
                         </div>
-                  </div>
-                );
+                      </div>
+                    );
                   })}
                 </div>
               ) : (
@@ -513,9 +604,9 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
                           <p className="text-sm text-gray-600">Available: {company.availableShares} shares</p>
                           {playerHoldings > 0 && (
                             <p className="text-sm text-green-600">Your holdings: {playerHoldings} shares</p>
-            )}
-          </div>
-        </div>
+                          )}
+                        </div>
+                      </div>
                       {/* Regular Buy */}
                       <div className="space-y-2 mt-4">
                         <h4 className="font-medium">Buy Shares:</h4>
@@ -594,11 +685,16 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
                     const company = companies.find(c => c.name === companyName);
                     if (!company) return null;
                     const logoSrc = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
+                    const isPriceZero = company.price === 0;
                     return (
                       <div
                         key={company.name}
-                        className="flex items-center gap-3 p-2 bg-white border rounded shadow-sm cursor-pointer hover:bg-red-50"
-                        onClick={() => { setSelectedSellCompany(company.name); setSellStep(2); }}
+                        className={`flex items-center gap-3 p-2 bg-white border rounded shadow-sm ${
+                          isPriceZero
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'cursor-pointer hover:bg-red-50'
+                        }`}
+                        onClick={() => { if (!isPriceZero) { setSelectedSellCompany(company.name); setSellStep(2); } }}
                       >
                         <img
                           src={logoSrc}
@@ -679,191 +775,63 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
 
         {/* Main Action Buttons */}
         <div className="grid grid-cols-3 gap-2">
-          <Dialog open={showRightIssueModal} onOpenChange={setShowRightIssueModal}>
+          <Dialog open={showDebentureModal} onOpenChange={setShowDebentureModal}>
             <DialogTrigger asChild>
-              <Button
-                className="bg-yellow-500 hover:bg-yellow-600 text-white"
-                onClick={() => {
-                  setShowRightIssueModal(true);
-                  setRightIssueStep(1);
-                  setSelectedRightIssueCompany(null);
-                  setRightIssueCheckbox(false);
-                }}
-              >
-                Right Issue
+              <Button className="bg-gray-500 hover:bg-gray-600 text-white">
+                Debenture
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogContent>
               <DialogHeader>
-                <DialogTitle>Right Issue - {player.name}</DialogTitle>
+                <DialogTitle>Debenture Options for {player.name}</DialogTitle>
+                <DialogDescription>
+                  Sell shares of companies whose price is ₹0 at their original starting price.
+                </DialogDescription>
               </DialogHeader>
-              {rightIssueStep === 1 ? (
-                // Step 1: Company selection (only companies player owns)
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-                  {companies.map(company => {
-                    const logoSrc = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
-                    const playerHoldings = player.holdings?.[company.name] || 0;
-                    return (
-                      <div
-                        key={company.name}
-                        className="flex items-center gap-3 p-2 bg-white border rounded shadow-sm cursor-pointer hover:bg-yellow-50"
-                        onClick={() => { setSelectedRightIssueCompany(company.name); setRightIssueStep(2); }}
-                      >
-                        <img
-                          src={logoSrc}
-                          alt={company.name}
-                          width={60}
-                          height={40}
-                          className="rounded"
-                          onError={e => { (e.target as HTMLImageElement).src = '/logos/default.png'; }}
-                        />
-                        <div>
-                          <div className="font-medium text-sm">{company.name}</div>
-                          <div className="text-blue-600 font-bold text-md">₹{company.price}</div>
-                          <div className="text-xs text-gray-600 mt-1">
-                            You own: {playerHoldings} shares
+              <ScrollArea className="max-h-60">
+                <div className="space-y-2 pr-4">
+                  {companies
+                    .filter(company => {
+                      const holding = player.holdings?.[company.name] || 0;
+                      return company.price === 0 && holding > 0;
+                    })
+                    .map(company => {
+                      const holding = player.holdings?.[company.name] || 0;
+                      const initialPrice = company.priceHistory[0]?.price ?? 0;
+                      return (
+                        <div key={company.name} className="flex justify-between items-center p-2 border rounded">
+                          <div>
+                            <p className="font-semibold">{company.name}</p>
+                            <p className="text-sm text-gray-500">Holding: {holding} shares</p>
+                            <p className="text-sm text-gray-500">Initial Price: ₹{initialPrice}</p>
                           </div>
+                          <Button size="sm" onClick={() => handleDebenture(company.name)}>
+                            Sell for ₹{(holding ?? 0) * initialPrice}
+                          </Button>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  {companies.filter(c => c.price === 0 && (player.holdings?.[c.name] || 0) > 0).length === 0 && (
+                    <p className="text-center text-gray-500 py-4">No companies eligible for debenture.</p>
+                  )}
                 </div>
-              ) : (
-                // Step 2: Right Issue UI for selected company
-                selectedRightIssueCompany && (() => {
-                  const company = companies.find(c => c.name === selectedRightIssueCompany);
-                  if (!company) return null;
-                  const playerHoldings = player.holdings?.[company.name] || 0;
-                  const rightIssuePrice = Math.ceil((company.price * 0.5) / 5) * 5;
-                  const maxRightIssueQuantity = Math.floor(playerHoldings * 0.5);
-                  const priceToShow = rightIssueCheckbox ? rightIssuePrice : company.price;
-                  const maxQty = rightIssueCheckbox ? maxRightIssueQuantity : company.availableShares;
-                  return (
-                    <div>
-                      <Button variant="outline" onClick={() => setRightIssueStep(1)} className="mb-4">← Back</Button>
-                      <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                        <img src={`/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`} alt={company.name} width={60} height={60} className="rounded shadow" />
-                        <div>
-                          <h3 className="font-semibold text-lg">{company.name}</h3>
-                          <p className="text-blue-600 font-bold">
-                            ₹{priceToShow} per share
-                            {rightIssueCheckbox && <span className="ml-2 text-xs text-yellow-600">(Right Issue Price)</span>}
-                          </p>
-                          <p className="text-sm text-gray-600">Available: {company.availableShares} shares</p>
-                          <p className="text-sm text-green-600">Your holdings: {playerHoldings} shares</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 mt-4">
-                        <input
-                          type="checkbox"
-                          id="right-issue-checkbox"
-                          checked={rightIssueCheckbox}
-                          onChange={e => setRightIssueCheckbox(e.target.checked)}
-                        />
-                        <label htmlFor="right-issue-checkbox" className="text-sm font-medium">
-                          Use Right Issue (50% price, max {maxRightIssueQuantity} shares)
-                        </label>
-                      </div>
-                      <div className="space-y-2 mt-4">
-                        <h4 className="font-medium">Right Issue Planning Calculator:</h4>
-                        <div className="flex gap-2 items-center">
-                          <Input
-                            type="number"
-                            value={rightIssueCashInput[company.name] || ''}
-                            onChange={e => setRightIssueCashInput(prev => ({ ...prev, [company.name]: e.target.value }))}
-                            placeholder={`Enter cash to use (default: your balance ₹${player.balance})`}
-                            min="0"
-                            className="flex-1"
-                          />
-                          <Button
-                            className="bg-yellow-500 hover:bg-yellow-600 text-white"
-                            onClick={() => {
-                              const cash = rightIssueCashInput[company.name]
-                                ? parseFloat(rightIssueCashInput[company.name])
-                                : player.balance;
-                              const result = calculateRightIssuePlan(company, cash);
-                              setRightIssueCalcResult(prev => ({
-                                ...prev,
-                                [company.name]: result
-                              }));
-                            }}
-                          >
-                            Calculate
-                          </Button>
-                          <Button
-                            className="bg-yellow-700 hover:bg-yellow-800 text-white"
-                            onClick={() => {
-                              const result = calculateRightIssuePlan(company, player.balance);
-                              setRightIssueCalcResult(prev => ({
-                                ...prev,
-                                [company.name]: result
-                              }));
-                            }}
-                          >
-                            Calculate All
-                          </Button>
-                        </div>
-                        <p className="text-xs text-gray-600">
-                          Formula: ((Cash ÷ (Price + (Price ÷ 2))) ÷ 1000) × 1000<br />
-                          Right Issue Price: ₹{rightIssuePrice} per share
-                        </p>
-                        {rightIssueCalcResult[company.name] && (
-                          <div className="mt-2 text-sm text-blue-700">
-                            If you buy <b>{rightIssueCalcResult[company.name].buyNow}</b> shares now,
-                            your next right issue will allow you to buy <b>{rightIssueCalcResult[company.name].nextRightIssue}</b> shares at 50% price.
-                          </div>
-                        )}
-                      </div>
-                      <div className="space-y-2 mt-4">
-                        <h4 className="font-medium">Buy Shares:</h4>
-                        <p className="text-xs text-gray-600">
-                          {rightIssueCheckbox
-                            ? `Minimum purchase: 1000 shares, max: ${maxRightIssueQuantity} shares (50% of holdings)`
-                            : `Minimum purchase: 1000 shares`}
-                        </p>
-                        <div className="flex gap-2">
-                          <Input
-                            type="number"
-                            value={rightIssueInput[company.name] || ''}
-                            onChange={(e) => setRightIssueInput((prev) => ({ ...prev, [company.name]: e.target.value }))}
-                            placeholder={`Quantity (min 1000${rightIssueCheckbox ? `, max ${maxRightIssueQuantity}` : ''})`}
-                            min="1000"
-                            max={maxQty}
-                            className="flex-1"
-                          />
-                          <Button
-                            className="bg-yellow-500 hover:bg-yellow-600 text-white"
-                            onClick={() => handleRightIssueBuy(company.name, parseInt(rightIssueInput[company.name] || '0'), rightIssueCheckbox)}
-                            disabled={
-                              !rightIssueInput[company.name] ||
-                              parseInt(rightIssueInput[company.name]) < 1000 ||
-                              parseInt(rightIssueInput[company.name]) > maxQty
-                            }
-                          >
-                            Buy
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()
-              )}
+              </ScrollArea>
             </DialogContent>
           </Dialog>
+
           <Button
+            className="bg-purple-500 hover:bg-purple-600 text-white"
             onClick={handleLSM}
-            className="bg-blue-500 hover:bg-blue-600 text-white"
           >
             Loan Stock
           </Button>
+
           <Dialog open={isPercentageDialogOpen} onOpenChange={setIsPercentageDialogOpen}>
             <DialogTrigger asChild>
               <Button
-                variant="outline"
-                className="hover:bg-gray-50"
+                className="bg-sky-500 hover:bg-sky-600 text-white"
               >
-                <Percent className="w-4 h-4 mr-1" />
-                %
+                <span className="font-bold ml-0.5" style={{ fontSize: 'calc(1rem + 2pt)' }}>%</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
@@ -919,7 +887,140 @@ export const PlayerCard = ({ player, onUpdatePlayer, companies, setCompanies }: 
           </Dialog>
         </div>
 
+        {/* Right Issue (moved below as full-width outline) */}
+        <Dialog open={showRightIssueModal} onOpenChange={setShowRightIssueModal}>
+          <DialogTrigger asChild>
+            <Button className="w-full mt-2 bg-yellow-500 hover:bg-yellow-600 text-white">
+              Right Issue
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Right Issue - {player.name}</DialogTitle>
+              <DialogDescription>
+                Buy shares at a discounted rate based on your current holdings.
+              </DialogDescription>
+            </DialogHeader>
+            {rightIssueStep === 1 ? (
+              // Step 1: Company selection
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                {companies.map(company => {
+                  const logoSrc = `/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`;
+                  const playerHoldings = player.holdings?.[company.name] || 0;
+                  return (
+                    <div
+                      key={company.name}
+                      className="flex items-center gap-3 p-2 bg-white border rounded shadow-sm cursor-pointer hover:bg-yellow-50"
+                      onClick={() => { setSelectedRightIssueCompany(company.name); setRightIssueStep(2); }}
+                    >
+                      <img
+                        src={logoSrc}
+                        alt={company.name}
+                        width={60}
+                        height={40}
+                        className="rounded"
+                        onError={e => { (e.target as HTMLImageElement).src = '/logos/default.png'; }}
+                      />
+                      <div>
+                        <div className="font-medium text-sm">{company.name}</div>
+                        <div className="text-blue-600 font-bold text-md">₹{company.price}</div>
+                        <div className="text-xs text-gray-600 mt-1">
+                          You own: {playerHoldings} shares
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              // Step 2: Right Issue UI for selected company
+              selectedRightIssueCompany && (() => {
+                const company = companies.find(c => c.name === selectedRightIssueCompany);
+                if (!company) return null;
+                const playerHoldings = player.holdings?.[company.name] || 0;
+                const halfPrice = company.price * 0.5;
+                const riPrice = Math.ceil(halfPrice / 5) * 5;
+                const maxRightIssueQuantity = Math.floor(playerHoldings * 0.5);
+                const qtyValue = rightIssueInput[company.name] || '';
+                const cashValue = rightIssueCashInput[company.name] || '';
+                return (
+                  <div>
+                    <Button variant="outline" onClick={() => setRightIssueStep(1)} className="mb-4">← Back</Button>
+                    <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                      <img src={`/logos/${company.name.replace(/\s+/g, '').toLowerCase()}.png`} alt={company.name} width={60} height={60} className="rounded shadow" />
+                      <div>
+                        <h3 className="font-semibold text-lg">{company.name}</h3>
+                        <p className="text-blue-600 font-bold">₹{company.price} per share</p>
+                        <p className="text-sm text-gray-600">Available: {company.availableShares} shares</p>
+                        <p className="text-sm text-green-600">Your holdings: {playerHoldings} shares</p>
+                      </div>
+                    </div>
 
+                    <div className="mt-3 flex items-center gap-2">
+                      <input id="riToggle" type="checkbox" checked={rightIssueCheckbox} onChange={(e) => setRightIssueCheckbox(e.target.checked)} />
+                      <label htmlFor="riToggle" className="text-sm">Use Right Issue (50% price, max {maxRightIssueQuantity} shares)</label>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-yellow-50 rounded border">
+                      <div className="font-medium mb-2">Right Issue Planning Calculator:</div>
+                      <div className="text-xs text-gray-600 mb-2">Formula: ((Cash ÷ (Price + ((Right Issue Price) ÷ 2))) ÷ 1000) × 1000</div>
+                      <div className="text-xs text-gray-700 mb-2">Right Issue Price: ₹{riPrice} per share</div>
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          type="number"
+                          value={cashValue}
+                          onChange={(e) => setRightIssueCashInput((prev) => ({ ...prev, [company.name]: e.target.value }))}
+                          placeholder={`Enter cash to use (default: your balance ₹${player.balance.toLocaleString('en-IN')})`}
+                          className="flex-1"
+                        />
+                        <Button
+                          className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                          onClick={() => {
+                            const cash = cashValue ? Number(cashValue) : player.balance;
+                            const plan = calculateRightIssuePlan(company, cash);
+                            setRightIssueInput((prev) => ({ ...prev, [company.name]: String(plan.buyNow) }));
+                            setRightIssueCalcResult((prev) => ({ ...prev, [company.name]: plan }));
+                          }}
+                        >
+                          Calculate
+                        </Button>
+                      </div>
+                      {rightIssueCalcResult[company.name] && (
+                        <div className="text-xs text-gray-700 mt-2">
+                          Suggested Buy Now: {rightIssueCalcResult[company.name].buyNow} shares · Next Right Issue: {rightIssueCalcResult[company.name].nextRightIssue} shares
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2 mt-4">
+                      <h4 className="font-medium">Buy Shares:</h4>
+                      <p className="text-xs text-gray-600">Minimum purchase: 1000 shares</p>
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          type="number"
+                          value={qtyValue}
+                          onChange={(e) => setRightIssueInput((prev) => ({ ...prev, [company.name]: e.target.value }))}
+                          placeholder="Quantity (min 1000)"
+                          min={1000}
+                          className="flex-1"
+                        />
+                        <Button
+                          onClick={() => handleRightIssueBuy(company.name, parseInt(qtyValue || '0'), rightIssueCheckbox)}
+                          disabled={!qtyValue || parseInt(qtyValue) < 1000 || (rightIssueCheckbox && parseInt(qtyValue) > maxRightIssueQuantity)}
+                        >
+                          Buy
+                        </Button>
+                      </div>
+                      {rightIssueCheckbox && (
+                        <div className="text-xs text-gray-600">Max right issue quantity: {maxRightIssueQuantity} shares</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()
+            )}
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
